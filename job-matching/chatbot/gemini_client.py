@@ -1,7 +1,12 @@
 import os
+import sys
 import google.generativeai as genai
 import logging
 from typing import Dict, Any, Optional
+
+# Add parent directory to path for imports
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from api.services.secret_manager import get_secret_manager
 
 logger = logging.getLogger(__name__)
 
@@ -10,12 +15,27 @@ class GeminiClient:
     
     def __init__(self, api_key: Optional[str] = None, model_name: str = "gemini-2.5-flash"):
         """Initialise le client Gemini avec une clé API et un modèle"""
-        self.api_key = api_key or os.getenv("GEMINI_API_KEY")
-        if not self.api_key:
-            raise ValueError("La clé API Gemini est requise. Définissez GEMINI_API_KEY dans vos variables d'environnement.")
+        # Try to get API key from secret manager (Vault or env var)
+        if not api_key:
+            try:
+                secret_manager = get_secret_manager()
+                import asyncio
+                # For sync initialization, we'll use env var as fallback
+                # In async contexts, use await secret_manager.get_gemini_api_key()
+                api_key = os.getenv("GEMINI_API_KEY")
+            except Exception as e:
+                logger.warning(f"Could not initialize secret manager: {e}, using environment variable")
+                api_key = os.getenv("GEMINI_API_KEY")
+        
+        if not api_key:
+            raise ValueError(
+                "La clé API Gemini est requise. "
+                "Définissez GEMINI_API_KEY dans vos variables d'environnement "
+                "ou configurez Vault avec le secret 'skyhire/gemini'."
+            )
         
         # Configure Google Gemini
-        genai.configure(api_key=self.api_key)
+        genai.configure(api_key=api_key)
 
         # Vérifie que le modèle est valide
         self.model_name = model_name

@@ -7,6 +7,7 @@ const {
   getCVById,
   getCVAnalysis,
   deleteCV,
+  deleteAllCVs,
   getCareerRoadmap
 } = require('../controllers/cvController');
 const { protect } = require('../middleware/auth');
@@ -28,6 +29,9 @@ router.post('/avatar', avatarUploadLimiter, uploadAvatarMw.single('avatar'), upl
 
 // CV upload with strict rate limiting
 router.post('/upload', uploadLimiter, upload.single('cv'), uploadCV);
+
+// Delete all CVs endpoint (must be before /:id route)
+router.delete('/all', generalCVLimiter, deleteAllCVs);
 
 // Other CV routes with general rate limiting
 router.get('/', generalCVLimiter, getUserCVs);

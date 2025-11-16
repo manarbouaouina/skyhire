@@ -1,4 +1,4 @@
-from fastapi import APIRouter, UploadFile, File, HTTPException, Form
+from fastapi import APIRouter, UploadFile, File, HTTPException, Form, Depends
 from pydantic import BaseModel, Field
 from typing import List, Optional
 import io
@@ -12,6 +12,12 @@ from collections import Counter
 import pandas as pd
 from sentence_transformers import SentenceTransformer, util
 import logging
+import sys
+import os
+
+# Add parent directory to path for imports
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from api.services.anonymization import get_anonymization_service, check_service_availability
 
 # Download NLTK data
 try:
@@ -149,7 +155,15 @@ async def analyze_resume_match(
     - **num_keywords**: Number of keywords to extract (default: 10)
     
     Returns match score, keyword analysis, and recommendations
+    
+    Note: PII is automatically anonymized before processing
     """
+    
+    # Check service availability
+    is_ready, missing = check_service_availability()
+    if not is_ready:
+        logger.warning(f"Anonymization service not fully ready: {missing}")
+        # Continue anyway, but log the warning
     
     # Validate file type
     if not resume_file.filename.lower().endswith('.pdf'):
@@ -162,11 +176,22 @@ async def analyze_resume_match(
     if not resume_text:
         raise HTTPException(status_code=400, detail="Could not extract text from PDF")
     
-    # Clean texts
-    resume_clean = remove_stopwords(clean_text(resume_text))
+    # Anonymize PII from resume text before processing
+    anonymization_service = get_anonymization_service()
+    anonymized_result = anonymization_service.anonymize_text(resume_text)
+    resume_text_anonymized = anonymized_result["anonymized_text"]
+    
+    # Log anonymization results
+    if anonymized_result.get("anonymization_applied"):
+        logger.info(f"Anonymized resume: found {anonymized_result.get('entities_count', 0)} PII entities")
+        logger.debug(f"Entities found: {anonymized_result.get('entities_found', [])}")
+    
+    # Use anonymized text for AI processing
+    # Clean texts (use anonymized version)
+    resume_clean = remove_stopwords(clean_text(resume_text_anonymized))
     job_clean = remove_stopwords(clean_text(job_description))
     
-    # Calculate semantic similarity
+    # Calculate semantic similarity (using anonymized text)
     resume_emb = model.encode(resume_clean, convert_to_tensor=True)
     job_emb = model.encode(job_clean, convert_to_tensor=True)
     similarity_score = util.cos_sim(resume_emb, job_emb).item() * 100
@@ -184,13 +209,14 @@ async def analyze_resume_match(
         match_percentage=keyword_match_percentage
     )
     
+    # Return anonymized text in response (never return original PII)
     return MatchResponse(
         match_score=similarity_score,
         fit_level=fit_level,
         message=message,
         color=color,
         keyword_analysis=keyword_analysis,
-        resume_text=resume_text[:500] + "..." if len(resume_text) > 500 else resume_text,
+        resume_text=resume_text_anonymized[:500] + "..." if len(resume_text_anonymized) > 500 else resume_text_anonymized,
         job_text=job_description[:500] + "..." if len(job_description) > 500 else job_description
     )
 
@@ -201,7 +227,14 @@ async def analyze_text_match(request: MatchRequest):
     
     - **job_description**: Text of the job description
     - **num_keywords**: Number of keywords to extract (default: 10)
+    
+    Note: PII is automatically anonymized before processing
     """
+    
+    # Check service availability
+    is_ready, missing = check_service_availability()
+    if not is_ready:
+        logger.warning(f"Anonymization service not fully ready: {missing}")
     
     # Sample resume text for demonstration
     sample_resume = """
@@ -211,8 +244,13 @@ async def analyze_text_match(request: MatchRequest):
     Strong communication skills and teamwork experience.
     """
     
-    # Clean texts
-    resume_clean = remove_stopwords(clean_text(sample_resume))
+    # Anonymize sample resume text
+    anonymization_service = get_anonymization_service()
+    anonymized_result = anonymization_service.anonymize_text(sample_resume)
+    sample_resume_anonymized = anonymized_result["anonymized_text"]
+    
+    # Clean texts (use anonymized version)
+    resume_clean = remove_stopwords(clean_text(sample_resume_anonymized))
     job_clean = remove_stopwords(clean_text(request.job_description))
     
     # Calculate semantic similarity
@@ -233,14 +271,15 @@ async def analyze_text_match(request: MatchRequest):
         match_percentage=keyword_match_percentage
     )
     
+    # Return anonymized text (never return original PII)
     return MatchResponse(
         match_score=similarity_score,
         fit_level=fit_level,
         message=message,
         color=color,
         keyword_analysis=keyword_analysis,
-        resume_text=sample_resume,
-        job_text=request.job_description
+        resume_text=sample_resume_anonymized[:500] + "..." if len(sample_resume_anonymized) > 500 else sample_resume_anonymized,
+        job_text=request.job_description[:500] + "..." if len(request.job_description) > 500 else request.job_description
     )
 
 @router.post("/download-report", response_model=CSVReportResponse)
@@ -268,8 +307,13 @@ async def download_csv_report(
     if not resume_text:
         raise HTTPException(status_code=400, detail="Could not extract text from PDF")
     
-    # Clean texts
-    resume_clean = remove_stopwords(clean_text(resume_text))
+    # Anonymize PII from resume text before processing
+    anonymization_service = get_anonymization_service()
+    anonymized_result = anonymization_service.anonymize_text(resume_text)
+    resume_text_anonymized = anonymized_result["anonymized_text"]
+    
+    # Clean texts (use anonymized version)
+    resume_clean = remove_stopwords(clean_text(resume_text_anonymized))
     job_clean = remove_stopwords(clean_text(job_description))
     
     # Calculate semantic similarity

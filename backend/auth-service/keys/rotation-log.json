@@ -1,0 +1,8 @@
+[
+  {
+    "oldKeyId": "default",
+    "newKeyId": "new-key-2024",
+    "rotatedAt": "2025-11-16T19:16:07.341Z",
+    "note": "Old key should be securely deleted after data re-encryption"
+  }
+]

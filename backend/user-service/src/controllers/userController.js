@@ -1,6 +1,7 @@
 // user-service/src/controllers/userController.js
 const UserProfile = require('../models/UserProfile');
 const mongoose = require('mongoose');
+const Connection = require('../models/Connection');
 
 // Obtenir le profil complet
 // user-service/src/controllers/userController.js - MODIFIER getProfile

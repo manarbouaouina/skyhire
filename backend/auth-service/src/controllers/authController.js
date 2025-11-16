@@ -1,6 +1,7 @@
 // auth-service/src/controllers/authController.js
 const User = require('../models/User');
 const { generateToken, setTokenCookie, clearTokenCookie } = require('../config/jwt');
+const { deleteUserData, anonymizeUserData } = require('../services/dataDeletion');
 
 // Inscription
 const signup = async (req, res) => {
@@ -178,10 +179,11 @@ const updateProfile = async (req, res) => {
 
 // auth-service/src/controllers/authController.js - AJOUTER CES FONCTIONS
 
-// Supprimer le compte utilisateur
+// Supprimer le compte utilisateur (Right to Erasure / GDPR)
 const deleteAccount = async (req, res) => {
   try {
-    const user = await User.findById(req.user.id);
+    const userId = req.user.id;
+    const user = await User.findById(userId);
     
     if (!user) {
       return res.status(404).json({
@@ -190,20 +192,48 @@ const deleteAccount = async (req, res) => {
       });
     }
 
-    // Soft delete - on désactive au lieu de supprimer
-    user.isActive = false;
-    await user.save();
+    // Get auth token for service calls
+    const authToken = req.headers.authorization?.split(' ')[1] || 
+                     req.cookies?.[process.env.JWT_COOKIE_NAME || 'auth_token'];
 
-    res.json({
-      status: 'success',
-      message: 'Account deleted successfully'
+    // Log deletion request
+    console.log('Account deletion requested:', {
+      userId,
+      email: user.email,
+      timestamp: new Date().toISOString(),
+      ip: req.ip
     });
+
+    // Delete user data from all services
+    const deletionResults = await deleteUserData(userId, authToken);
+
+    // Clear authentication cookie
+    clearTokenCookie(res);
+
+    if (deletionResults.success) {
+      res.json({
+        status: 'success',
+        message: 'Account and all associated data deleted successfully',
+        deletedAt: deletionResults.deletedAt,
+        services: deletionResults.services
+      });
+    } else {
+      // Some services failed, but account is deleted
+      res.status(207).json({
+        status: 'partial_success',
+        message: 'Account deleted, but some data deletion failed',
+        deletedAt: deletionResults.deletedAt,
+        services: deletionResults.services,
+        errors: deletionResults.errors
+      });
+    }
 
   } catch (error) {
     console.error('Delete account error:', error);
     res.status(500).json({
       status: 'error',
-      message: 'Failed to delete account'
+      message: 'Failed to delete account',
+      error: error.message
     });
   }
 };

@@ -12,6 +12,17 @@ from .config import settings
 from .routes import api_router
 from .routes import recommendations, analysis, resume_match
 
+# Try to import anonymization service
+try:
+    from .routes import anonymization
+    from .services.anonymization import check_service_availability
+    ANONYMIZATION_AVAILABLE = True
+except ImportError as e:
+    anonymization = None
+    def check_service_availability():
+        return False, ["Service not initialized"]
+    ANONYMIZATION_AVAILABLE = False
+
 # Configuration du logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -77,11 +88,27 @@ async def validation_exception_handler(request, exc):
 @app.get("/health")
 async def health_check():
     """Endpoint de vérification de l'état de l'API"""
-    return {
+    health_status = {
         "status": "healthy",
         "version": settings.VERSION,
-        "project": settings.PROJECT_NAME
+        "project": settings.PROJECT_NAME,
+        "services": {}
     }
+    
+    # Check anonymization service status if available
+    try:
+        anonymization_ready, anonymization_missing = check_service_availability()
+        health_status["services"]["anonymization"] = {
+            "available": anonymization_ready,
+            "missing": anonymization_missing if not anonymization_ready else []
+        }
+    except Exception as e:
+        health_status["services"]["anonymization"] = {
+            "available": False,
+            "error": str(e)
+        }
+    
+    return health_status
 
 @app.get("/")
 async def root():
@@ -97,6 +124,22 @@ app.include_router(api_router, prefix=settings.API_V1_STR)
 app.include_router(recommendations.router, prefix=settings.API_V1_STR, tags=["recommendations"])
 app.include_router(analysis.router, prefix=settings.API_V1_STR, tags=["analysis"])
 app.include_router(resume_match.router, prefix="/api/v1/resume-match", tags=["resume-match"])
+
+# Include anonymization router if available
+if ANONYMIZATION_AVAILABLE and anonymization:
+    app.include_router(anonymization.router, prefix="/api/v1/anonymization", tags=["anonymization"])
+    # Check anonymization service on startup
+    try:
+        anonymization_ready, anonymization_missing = check_service_availability()
+        if anonymization_ready:
+            logger.info("✅ Anonymization service ready")
+        else:
+            logger.warning(f"⚠️ Anonymization service not fully ready: {anonymization_missing}")
+    except Exception as e:
+        logger.warning(f"⚠️ Anonymization service check failed: {e}")
+else:
+    logger.warning("⚠️ Anonymization service not available (import failed)")
+
 logger.info(f"✅ API {settings.PROJECT_NAME} initialisée avec succès")
 
 if __name__ == "__main__":

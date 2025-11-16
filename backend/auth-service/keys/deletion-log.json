@@ -1,0 +1,7 @@
+[
+  {
+    "keyId": "test-user-123",
+    "deletedAt": "2025-11-16T19:16:07.335Z",
+    "note": "Key deleted - data encrypted with this key is now unrecoverable"
+  }
+]

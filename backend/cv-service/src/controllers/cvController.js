@@ -229,9 +229,8 @@ const deleteCV = async (req, res) => {
       fs.unlinkSync(cv.filePath);
     }
 
-    // Soft delete - marquer comme inactif
-    cv.isActive = false;
-    await cv.save();
+    // Permanently delete (hard delete for GDPR compliance)
+    await CV.findByIdAndDelete(cv._id);
 
     res.json({
       status: 'success',
@@ -242,6 +241,60 @@ const deleteCV = async (req, res) => {
     res.status(500).json({
       status: 'error',
       message: 'Failed to delete CV'
+    });
+  }
+};
+
+// Delete all CVs for a user (GDPR Right to Erasure)
+const deleteAllCVs = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    
+    // Find all CVs for this user
+    const cvs = await CV.find({ userId });
+    
+    let deletedCount = 0;
+    let fileErrors = [];
+
+    // Delete all CV files and records
+    for (const cv of cvs) {
+      try {
+        // Delete physical file
+        if (cv.filePath && fs.existsSync(cv.filePath)) {
+          fs.unlinkSync(cv.filePath);
+        }
+        
+        // Delete avatar if exists
+        if (cv.avatar && fs.existsSync(cv.avatar)) {
+          fs.unlinkSync(cv.avatar);
+        }
+        
+        // Permanently delete document
+        await CV.findByIdAndDelete(cv._id);
+        deletedCount++;
+      } catch (fileError) {
+        fileErrors.push({
+          cvId: cv._id,
+          error: fileError.message
+        });
+        // Still delete the document even if file deletion fails
+        await CV.findByIdAndDelete(cv._id);
+        deletedCount++;
+      }
+    }
+
+    res.json({
+      status: 'success',
+      message: `Deleted ${deletedCount} CV(s)`,
+      deletedCount,
+      fileErrors: fileErrors.length > 0 ? fileErrors : undefined
+    });
+  } catch (error) {
+    console.error('Delete all CVs error:', error);
+    res.status(500).json({
+      status: 'error',
+      message: 'Failed to delete CVs',
+      error: error.message
     });
   }
 };
@@ -328,5 +381,6 @@ module.exports = {
   getCVById,
   getCVAnalysis,
   deleteCV,
+  deleteAllCVs,
   getCareerRoadmap
 };

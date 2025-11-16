@@ -5,6 +5,7 @@ node_modules/
 dist/
 .env
 .env.*
+!.env.example
 /.pnp
 .pnp.js
 
@@ -29,3 +30,9 @@ package-lock.json
 pnpm-workspace.yaml
 pnpm-lock.yaml
 /.idea
+
+# Vault tokens and secrets
+*.vault-token
+vault-token
+secrets/
+*.secret
