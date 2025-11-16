@@ -1,26 +1,12 @@
 // auth-service/src/controllers/authController.js
 const User = require('../models/User');
-const { generateToken } = require('../config/jwt');
+const { generateToken, setTokenCookie, clearTokenCookie } = require('../config/jwt');
 
 // Inscription
 const signup = async (req, res) => {
   try {
     const { name, email, password, role } = req.body;
-
-    // Validation
-    if (!name || !email || !password) {
-      return res.status(400).json({
-        status: 'error',
-        message: 'Name, email and password are required'
-      });
-    }
-
-    if (password.length < 6) {
-      return res.status(400).json({
-        status: 'error',
-        message: 'Password must be at least 6 characters'
-      });
-    }
+    // Validation is handled by Joi middleware
 
     // Vérifier si l'utilisateur existe déjà
     const existingUser = await User.findOne({ email });
@@ -62,9 +48,12 @@ const signup = async (req, res) => {
 
     await newUser.updateLastLogin();
 
+    // Set token in HTTP-only cookie
+    setTokenCookie(res, token);
+
     res.status(201).json({
       status: 'success',
-      token,
+      token, // Also return in response for backward compatibility
       user: {
         id: newUser._id,
         name: newUser.name,
@@ -87,14 +76,7 @@ const signup = async (req, res) => {
 const login = async (req, res) => {
   try {
     const { email, password } = req.body;
-
-    // Validation
-    if (!email || !password) {
-      return res.status(400).json({
-        status: 'error',
-        message: 'Email and password are required'
-      });
-    }
+    // Validation is handled by Joi middleware
 
     // Trouver l'utilisateur et vérifier le password
     const user = await User.findOne({ email }).select('+password');
@@ -120,9 +102,12 @@ const login = async (req, res) => {
     // Mettre à jour lastLogin
     await user.updateLastLogin();
 
+    // Set token in HTTP-only cookie
+    setTokenCookie(res, token);
+
     res.json({
       status: 'success',
-      token,
+      token, // Also return in response for backward compatibility
       user: {
         id: user._id,
         name: user.name,
@@ -270,11 +255,53 @@ const changePassword = async (req, res) => {
   }
 };
 
+// Google OAuth callback handler
+const googleCallback = async (req, res) => {
+  try {
+    const user = req.user; // Set by passport after successful authentication
+    
+    if (!user) {
+      return res.redirect(`${process.env.CLIENT_URL || 'http://localhost:3000'}/login?error=authentication_failed`);
+    }
+
+    // Generate JWT token
+    const token = generateToken(user._id, user.role);
+
+    // Set token in HTTP-only cookie
+    setTokenCookie(res, token);
+
+    // Redirect to frontend with success
+    res.redirect(`${process.env.CLIENT_URL || 'http://localhost:3000'}/dashboard?auth=success`);
+  } catch (error) {
+    console.error('Google OAuth callback error:', error);
+    res.redirect(`${process.env.CLIENT_URL || 'http://localhost:3000'}/login?error=oauth_error`);
+  }
+};
+
+// Logout handler
+const logout = async (req, res) => {
+  try {
+    clearTokenCookie(res);
+    res.json({
+      status: 'success',
+      message: 'Logged out successfully'
+    });
+  } catch (error) {
+    console.error('Logout error:', error);
+    res.status(500).json({
+      status: 'error',
+      message: 'Failed to logout'
+    });
+  }
+};
+
 module.exports = {
   signup,
   login,
   getProfile,
   updateProfile, 
   deleteAccount,
-  changePassword
+  changePassword,
+  googleCallback,
+  logout
 };

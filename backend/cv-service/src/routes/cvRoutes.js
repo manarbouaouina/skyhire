@@ -12,20 +12,28 @@ const {
 const { protect } = require('../middleware/auth');
 const upload = require('../middleware/upload');
 const uploadAvatarMw = require('../middleware/uploadAvatar');
+const {
+  uploadLimiter,
+  avatarUploadLimiter,
+  generalCVLimiter
+} = require('../middleware/rateLimiter');
 
 const router = express.Router();
 
 // Toutes les routes sont protégées
 router.use(protect);
 
-// Avatar upload
-router.post('/avatar', uploadAvatarMw.single('avatar'), uploadAvatar);
+// Avatar upload with rate limiting
+router.post('/avatar', avatarUploadLimiter, uploadAvatarMw.single('avatar'), uploadAvatar);
 
-router.post('/upload', upload.single('cv'), uploadCV);
-router.get('/', getUserCVs);
-router.get('/:id', getCVById);
-router.get('/:id/analysis', getCVAnalysis);
-router.get('/:id/roadmap', getCareerRoadmap);
-router.delete('/:id', deleteCV);
+// CV upload with strict rate limiting
+router.post('/upload', uploadLimiter, upload.single('cv'), uploadCV);
+
+// Other CV routes with general rate limiting
+router.get('/', generalCVLimiter, getUserCVs);
+router.get('/:id', generalCVLimiter, getCVById);
+router.get('/:id/analysis', generalCVLimiter, getCVAnalysis);
+router.get('/:id/roadmap', generalCVLimiter, getCareerRoadmap);
+router.delete('/:id', generalCVLimiter, deleteCV);
 
 module.exports = router;

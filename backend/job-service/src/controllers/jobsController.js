@@ -584,13 +584,7 @@ const createJob = async (req, res) => {
       contact
     } = req.body;
 
-    // Validation des champs requis
-    if (!title || !company || !location || !category || !description || !salary) {
-      return res.status(400).json({
-        status: 'error',
-        message: 'Title, company, location, category, description and salary are required'
-      });
-    }
+    // Validation is handled by Joi middleware
 
     const job = await Job.create({
       title,

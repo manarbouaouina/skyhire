@@ -134,6 +134,9 @@ const LoginPage: React.FC = () => {
             <button
               type="button"
               className="flex items-center justify-center flex-1 py-2 rounded-lg bg-gradient-to-r from-yellow-400 via-green-500 to-blue-500 text-white font-semibold shadow-md hover:opacity-90 transition"
+              onClick={() => {
+                window.location.href = "http://localhost:5001/api/auth/google";
+              }}
             >
               <FcGoogle className="text-xl mr-2 bg-white rounded-full" /> Google
             </button>

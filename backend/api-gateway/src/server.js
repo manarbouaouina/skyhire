@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const morgan = require('morgan');
 const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
 const { createProxyMiddleware } = require('http-proxy-middleware');
 const http = require('http');
 const axios = require('axios');
@@ -12,6 +13,32 @@ app.set('trust proxy', 1);
 
 const PORT = process.env.PORT || 5000;
 const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:3000';
+
+// General API rate limiter (1000 requests per 15 minutes per IP)
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 1000, // 1000 requests per windowMs
+  message: {
+    status: 'error',
+    message: 'Too many requests from this IP, please try again later'
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (req, res) => {
+    console.warn('API Gateway rate limit exceeded:', {
+      path: req.path,
+      method: req.method,
+      ip: req.ip,
+      timestamp: new Date().toISOString()
+    });
+    
+    res.status(429).json({
+      status: 'error',
+      message: 'Too many requests from this IP, please try again later',
+      retryAfter: Math.ceil(req.rateLimit.resetTime / 1000) - Math.ceil(Date.now() / 1000)
+    });
+  }
+});
 
 const targets = {
   AUTH: process.env.AUTH_SERVICE_URL || 'http://localhost:5001',
@@ -28,11 +55,30 @@ app.use(helmet());
 app.use(cors({ origin: CLIENT_URL, credentials: true }));
 app.use(morgan('dev'));
 
+// Apply general rate limiting to all API routes
+app.use('/api', apiLimiter);
+
 const mkProxy = (target) => createProxyMiddleware({
   target,
   changeOrigin: true,
   ws: true,
-  logLevel: 'warn'
+  logLevel: 'warn',
+  cookieDomainRewrite: false, // Preserve cookie domain
+  onProxyReq: (proxyReq, req, res) => {
+    // Forward cookies from client to service
+    if (req.headers.cookie) {
+      proxyReq.setHeader('Cookie', req.headers.cookie);
+    }
+  },
+  onProxyRes: (proxyRes, req, res) => {
+    // Forward cookies from service to client
+    if (proxyRes.headers['set-cookie']) {
+      proxyRes.headers['set-cookie'] = proxyRes.headers['set-cookie'].map(cookie => {
+        // Ensure cookies work with the client origin
+        return cookie.replace(/Domain=[^;]+/gi, '');
+      });
+    }
+  }
 });
 
 app.get('/api/health', async (req, res) => {
@@ -64,7 +110,41 @@ app.use('/api/aero', createProxyMiddleware({
   changeOrigin: true,
   ws: true,
   pathRewrite: { '^/api/aero': '' },
-  logLevel: 'warn'
+  logLevel: 'warn',
+  cookieDomainRewrite: false,
+  onProxyReq: (proxyReq, req, res) => {
+    if (req.headers.cookie) {
+      proxyReq.setHeader('Cookie', req.headers.cookie);
+    }
+  },
+  onProxyRes: (proxyRes, req, res) => {
+    if (proxyRes.headers['set-cookie']) {
+      proxyRes.headers['set-cookie'] = proxyRes.headers['set-cookie'].map(cookie => {
+        return cookie.replace(/Domain=[^;]+/gi, '');
+      });
+    }
+  }
+}));
+// Match API proxy - routes /api/match to resume-match service
+app.use('/api/match', createProxyMiddleware({
+  target: targets.AERONAUTICS,
+  changeOrigin: true,
+  ws: true,
+  pathRewrite: { '^/api/match': '/api/v1/resume-match' },
+  logLevel: 'warn',
+  cookieDomainRewrite: false,
+  onProxyReq: (proxyReq, req, res) => {
+    if (req.headers.cookie) {
+      proxyReq.setHeader('Cookie', req.headers.cookie);
+    }
+  },
+  onProxyRes: (proxyRes, req, res) => {
+    if (proxyRes.headers['set-cookie']) {
+      proxyRes.headers['set-cookie'] = proxyRes.headers['set-cookie'].map(cookie => {
+        return cookie.replace(/Domain=[^;]+/gi, '');
+      });
+    }
+  }
 }));
 
 app.use('/uploads', mkProxy(targets.CV));

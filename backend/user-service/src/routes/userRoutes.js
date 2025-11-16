@@ -21,6 +21,11 @@ const {
   removeConnection,
 } = require('../controllers/connectionController');
 const { protect } = require('../middleware/auth');
+const validate = require('../middleware/validate');
+const {
+  updateProfileSchema,
+  addSkillSchema
+} = require('../validators/userValidators');
 
 const router = express.Router();
 
@@ -31,9 +36,9 @@ router.post('/profile/auto-create', autoCreateProfile);
 
 // Routes protégées
 router.get('/profile', protect, getProfile);
-router.put('/profile', protect, updateProfile);
+router.put('/profile', protect, validate(updateProfileSchema), updateProfile);
 router.get('/stats', protect, getUserStats);
-router.post('/skills', protect, addSkill);
+router.post('/skills', protect, validate(addSkillSchema), addSkill);
 router.delete('/skills/:skillId', protect, removeSkill);
 
 // Crew Network: connections
